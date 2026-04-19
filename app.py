@@ -33,11 +33,13 @@ def fetch_benchmarks(start="2000-01-01"):
         import yfinance as yf
         from bcb import sgs
 
-        raw_ibov  = yf.download("^BVSP",  start=start, auto_adjust=True, progress=False)
-        raw_sp500 = yf.download("^GSPC",  start=start, auto_adjust=True, progress=False)
+        raw_ibov   = yf.download("^BVSP",    start=start, auto_adjust=True, progress=False)
+        raw_sp500  = yf.download("^GSPC",    start=start, auto_adjust=True, progress=False)
+        raw_usdbrl = yf.download("USDBRL=X", start=start, auto_adjust=True, progress=False)
 
-        ibov  = raw_ibov["Close"].squeeze().rename("ibov")
-        sp500 = raw_sp500["Close"].squeeze().rename("sp500")
+        ibov   = raw_ibov["Close"].squeeze().rename("ibov")
+        sp500  = raw_sp500["Close"].squeeze().rename("sp500")
+        usdbrl = raw_usdbrl["Close"].squeeze().rename("usdbrl")
 
         # CDI mensal — BCB SGS série 4391 (% ao mês, série mensal sem limite de janela diária)
         cdi_raw = sgs.get({"CDI": 4391}, start=start)
@@ -56,12 +58,13 @@ def fetch_benchmarks(start="2000-01-01"):
 
         ibov      = prep(ibov)
         sp500     = prep(sp500)
+        usdbrl    = prep(usdbrl)
         cdi_index = prep(cdi_index)
 
-        return ibov, sp500, cdi_index, None
+        return ibov, sp500, usdbrl, cdi_index, None
 
     except Exception as e:
-        return None, None, None, str(e)
+        return None, None, None, None, str(e)
 
 
 # -------------------------
@@ -118,12 +121,21 @@ df = df.dropna(subset=["retorno_anual"])
 # Benchmarks por janela
 # -------------------------
 
-ibov_s, sp500_s, cdi_idx, bench_erro = fetch_benchmarks()
+ibov_s, sp500_s, usdbrl_s, cdi_idx, bench_erro = fetch_benchmarks()
 
 benchmarks_ok = ibov_s is not None
 
 if benchmarks_ok:
     df["sell_date"] = df["Data"] + pd.Timedelta(days=dias_ciclo)
+
+    # Converte Ibovespa e S&P 500 para a moeda escolhida no toggle
+    # USDBRL=X: quantos BRL valem 1 USD
+    if moeda:   # USD → Ibov divide por USDBRL; SP500 já está em USD
+        ibov_bench  = ibov_s / usdbrl_s
+        sp500_bench = sp500_s
+    else:       # BRL → Ibov já está em BRL; SP500 multiplica por USDBRL
+        ibov_bench  = ibov_s
+        sp500_bench = sp500_s * usdbrl_s
 
     def retorno_janela(serie, buy_dates, sell_dates):
         buy_idx  = pd.DatetimeIndex(buy_dates.values).normalize()
@@ -132,9 +144,9 @@ if benchmarks_ok:
         sells = serie.reindex(sell_idx, method="ffill").values
         return (sells / buys) - 1
 
-    df["ret_ibov"]  = retorno_janela(ibov_s,  df["Data"], df["sell_date"])
-    df["ret_sp500"] = retorno_janela(sp500_s, df["Data"], df["sell_date"])
-    df["ret_cdi"]   = retorno_janela(cdi_idx, df["Data"], df["sell_date"])
+    df["ret_ibov"]  = retorno_janela(ibov_bench,  df["Data"], df["sell_date"])
+    df["ret_sp500"] = retorno_janela(sp500_bench, df["Data"], df["sell_date"])
+    df["ret_cdi"]   = retorno_janela(cdi_idx,     df["Data"], df["sell_date"])
 
     df["ret_ibov_anual"]  = (1 + df["ret_ibov"])  ** (1 / ciclo_anos) - 1
     df["ret_sp500_anual"] = (1 + df["ret_sp500"]) ** (1 / ciclo_anos) - 1
@@ -170,9 +182,9 @@ if benchmarks_ok:
     beat_sp500 = (df_valid["retorno_anual"] > df_valid["ret_sp500_anual"]).mean()
 
     bc1, bc2, bc3, bc4 = st.columns(4)
-    bc1.metric("Bateu o CDI",      f"{beat_cdi*100:.1f}%")
-    bc2.metric("Bateu o Ibovespa", f"{beat_ibov*100:.1f}%")
-    bc3.metric("Bateu o S&P 500",  f"{beat_sp500*100:.1f}%")
+    bc1.metric("Bateu o CDI (BRL)",               f"{beat_cdi*100:.1f}%")
+    bc2.metric(f"Bateu o Ibovespa ({label_moeda})", f"{beat_ibov*100:.1f}%")
+    bc3.metric(f"Bateu o S&P 500 ({label_moeda})",  f"{beat_sp500*100:.1f}%")
     bc4.metric("Prob. de perda",   f"{prob_loss*100:.1f}%")
 else:
     st.warning(f"Benchmarks indisponíveis (verifique a conexão): {bench_erro}")
@@ -215,9 +227,9 @@ if benchmarks_ok:
     df_comp = df[["Data", "retorno_anual", "ret_cdi_anual", "ret_ibov_anual", "ret_sp500_anual"]].copy()
     df_comp = df_comp.rename(columns={
         "retorno_anual":   f"Boi ({percentual_investidor}% do lucro)",
-        "ret_cdi_anual":   "CDI",
-        "ret_ibov_anual":  "Ibovespa",
-        "ret_sp500_anual": "S&P 500 (USD)",
+        "ret_cdi_anual":   "CDI (BRL)",
+        "ret_ibov_anual":  f"Ibovespa ({label_moeda})",
+        "ret_sp500_anual": f"S&P 500 ({label_moeda})",
     })
     df_melt = df_comp.melt(id_vars="Data", var_name="Ativo", value_name="Retorno Anualizado")
 
