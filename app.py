@@ -231,6 +231,7 @@ fig2 = px.line(
     title=f"Retorno anualizado do ciclo ({arrobas_bezerro}@ → {arrobas_boi}@) — {percentual_investidor}% do lucro em {label_moeda}"
 )
 fig2.update_yaxes(tickformat=".0%")
+fig2.update_xaxes(title_text="Data de realização do aporte", range=["2000-01-01", df["Data"].max()])
 st.plotly_chart(fig2, use_container_width=True)
 
 # -------------------------
@@ -254,6 +255,7 @@ if benchmarks_ok:
         title=f"Retorno anualizado por janela de {ciclo_anos} ano(s)"
     )
     fig3.update_yaxes(tickformat=".0%")
+    fig3.update_xaxes(title_text="Data de realização do aporte", range=["2000-01-01", df["Data"].max()])
     st.plotly_chart(fig3, use_container_width=True)
 
 # -------------------------
