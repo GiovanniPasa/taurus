@@ -44,9 +44,23 @@ def fetch_benchmarks(start="2000-01-01"):
         cdi_raw["fator"] = 1 + cdi_raw["CDI"] / 100
         cdi_index = cdi_raw["fator"].cumprod().rename("cdi_index")
 
-        # USD/BRL diário — BCB SGS série 1 (cobertura desde 1994, muito superior ao USDBRL=X do Yahoo)
-        usdbrl_raw = sgs.get({"usdbrl": 1}, start=start)
-        usdbrl = usdbrl_raw["usdbrl"].rename("usdbrl")
+        # USD/BRL diário — BCB SGS série 1
+        # A API do BCB limita séries diárias a janelas de 10 anos; busca em fatias e concatena.
+        def _bcb_daily_chunked(code, name, start_str):
+            s = pd.Timestamp(start_str)
+            end = pd.Timestamp.today()
+            partes = []
+            while s < end:
+                e = min(s + pd.DateOffset(years=9, months=6), end)
+                chunk = sgs.get({name: code},
+                                start=s.strftime("%Y-%m-%d"),
+                                end=e.strftime("%Y-%m-%d"))
+                if not chunk.empty:
+                    partes.append(chunk[name])
+                s = e + pd.Timedelta(days=1)
+            return pd.concat(partes).drop_duplicates()
+
+        usdbrl = _bcb_daily_chunked(1, "usdbrl", start).rename("usdbrl")
 
         # Reindexar para calendário contínuo (ffill preenche fins de semana/feriados)
         all_dates = pd.date_range(start=start, end=pd.Timestamp.today(), tz=None)
