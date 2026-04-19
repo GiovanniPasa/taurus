@@ -33,18 +33,20 @@ def fetch_benchmarks(start="2000-01-01"):
         import yfinance as yf
         from bcb import sgs
 
-        raw_ibov   = yf.download("^BVSP",    start=start, auto_adjust=True, progress=False)
-        raw_sp500  = yf.download("^GSPC",    start=start, auto_adjust=True, progress=False)
-        raw_usdbrl = yf.download("USDBRL=X", start=start, auto_adjust=True, progress=False)
+        raw_ibov  = yf.download("^BVSP", start=start, auto_adjust=True, progress=False)
+        raw_sp500 = yf.download("^GSPC", start=start, auto_adjust=True, progress=False)
 
-        ibov   = raw_ibov["Close"].squeeze().rename("ibov")
-        sp500  = raw_sp500["Close"].squeeze().rename("sp500")
-        usdbrl = raw_usdbrl["Close"].squeeze().rename("usdbrl")
+        ibov  = raw_ibov["Close"].squeeze().rename("ibov")
+        sp500 = raw_sp500["Close"].squeeze().rename("sp500")
 
-        # CDI mensal — BCB SGS série 4391 (% ao mês, série mensal sem limite de janela diária)
+        # CDI mensal — BCB SGS série 4391 (% ao mês)
         cdi_raw = sgs.get({"CDI": 4391}, start=start)
         cdi_raw["fator"] = 1 + cdi_raw["CDI"] / 100
         cdi_index = cdi_raw["fator"].cumprod().rename("cdi_index")
+
+        # USD/BRL diário — BCB SGS série 1 (cobertura desde 1994, muito superior ao USDBRL=X do Yahoo)
+        usdbrl_raw = sgs.get({"usdbrl": 1}, start=start)
+        usdbrl = usdbrl_raw["usdbrl"].rename("usdbrl")
 
         # Reindexar para calendário contínuo (ffill preenche fins de semana/feriados)
         all_dates = pd.date_range(start=start, end=pd.Timestamp.today(), tz=None)
