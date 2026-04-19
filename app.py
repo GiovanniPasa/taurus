@@ -232,8 +232,8 @@ fig2 = px.line(
     title=f"Retorno anualizado do ciclo ({arrobas_bezerro}@ → {arrobas_boi}@) — {percentual_investidor}% do lucro em {label_moeda}"
 )
 fig2.add_scatter(
-    x=df["Data"],
-    y=df[preco_bezerro],
+    x=bezerro["Data"],
+    y=bezerro[preco_bezerro],
     name=f"Arroba do bezerro ({label_moeda})",
     yaxis="y2",
     line=dict(color="darkorange", dash="dot"),
@@ -248,7 +248,7 @@ fig2.update_layout(
     ),
     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
 )
-fig2.update_xaxes(title_text="Data de realização do aporte", range=["2000-01-01", df["Data"].max()])
+fig2.update_xaxes(title_text="Data de realização do aporte", range=["2000-01-01", "2026-12-31"])
 st.plotly_chart(fig2, use_container_width=True)
 
 # -------------------------
