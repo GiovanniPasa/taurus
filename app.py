@@ -228,9 +228,26 @@ st.header("Retorno anualizado do ciclo pecuário")
 
 fig2 = px.line(
     df, x="Data", y="retorno_anual",
+    labels={"retorno_anual": "Retorno anualizado"},
     title=f"Retorno anualizado do ciclo ({arrobas_bezerro}@ → {arrobas_boi}@) — {percentual_investidor}% do lucro em {label_moeda}"
 )
-fig2.update_yaxes(tickformat=".0%")
+fig2.add_scatter(
+    x=df["Data"],
+    y=df[preco_bezerro],
+    name=f"Arroba do bezerro ({label_moeda})",
+    yaxis="y2",
+    line=dict(color="darkorange", dash="dot"),
+)
+fig2.update_layout(
+    yaxis=dict(tickformat=".0%", title="Retorno anualizado"),
+    yaxis2=dict(
+        title=f"Arroba do bezerro ({label_moeda})",
+        overlaying="y",
+        side="right",
+        showgrid=False,
+    ),
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+)
 fig2.update_xaxes(title_text="Data de realização do aporte", range=["2000-01-01", df["Data"].max()])
 st.plotly_chart(fig2, use_container_width=True)
 
