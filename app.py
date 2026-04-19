@@ -47,9 +47,16 @@ def fetch_benchmarks(start="2000-01-01"):
         # Reindexar para calendário contínuo (ffill preenche fins de semana/feriados)
         all_dates = pd.date_range(start=start, end=pd.Timestamp.today(), tz=None)
 
-        ibov      = ibov.tz_localize(None).reindex(all_dates).ffill()
-        sp500     = sp500.tz_localize(None).reindex(all_dates).ffill()
-        cdi_index = cdi_index.reindex(all_dates).ffill()
+        def prep(s):
+            """Remove timezone e normaliza para meia-noite antes de reindexar."""
+            if getattr(s.index, "tz", None) is not None:
+                s = s.tz_convert(None)
+            s.index = s.index.normalize()
+            return s.reindex(all_dates).ffill()
+
+        ibov      = prep(ibov)
+        sp500     = prep(sp500)
+        cdi_index = prep(cdi_index)
 
         return ibov, sp500, cdi_index, None
 
@@ -119,8 +126,10 @@ if benchmarks_ok:
     df["sell_date"] = df["Data"] + pd.Timedelta(days=dias_ciclo)
 
     def retorno_janela(serie, buy_dates, sell_dates):
-        buys  = serie.reindex(buy_dates.values,  method="ffill").values
-        sells = serie.reindex(sell_dates.values, method="ffill").values
+        buy_idx  = pd.DatetimeIndex(buy_dates.values).normalize()
+        sell_idx = pd.DatetimeIndex(sell_dates.values).normalize()
+        buys  = serie.reindex(buy_idx,  method="ffill").values
+        sells = serie.reindex(sell_idx, method="ffill").values
         return (sells / buys) - 1
 
     df["ret_ibov"]  = retorno_janela(ibov_s,  df["Data"], df["sell_date"])
