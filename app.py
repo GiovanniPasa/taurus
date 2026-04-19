@@ -4,23 +4,93 @@ import numpy as np
 import plotly.express as px
 
 # -------------------------
-# Dados de boi e bezerro
+# Dados de boi e bezerro — CEPEA/ESALQ ao vivo
 # -------------------------
 
-arquivo = "dados.xlsx"
+@st.cache_data(ttl=86400, show_spinner="Buscando preços de boi e bezerro (CEPEA/ESALQ)...")
+def fetch_cattle_prices(start="2000-01-01"):
+    """
+    Busca preços diários do Boi Gordo e do Bezerro direto da API do CEPEA/ESALQ.
 
-boi      = pd.read_excel(arquivo, sheet_name="BoiGordo")
-bezerro  = pd.read_excel(arquivo, sheet_name="Bezerro")
+    Fontes:
+      tabela_id=2 — Indicador Boi Gordo CEPEA/ESALQ (R$/arroba, já em @)
+      tabela_id=3 — Bezerro Média SP (R$/cabeça e US$/cabeça → ÷7 para arroba)
 
-boi.columns     = boi.columns.str.strip()
-bezerro.columns = bezerro.columns.str.strip()
+    O câmbio implícito do bezerro (BRL/USD da própria CEPEA) é usado para
+    derivar o preço do boi gordo em USD.
+    """
+    import requests, xlrd
 
-boi["Data"]     = pd.to_datetime(boi["Data"],     dayfirst=True)
-bezerro["Data"] = pd.to_datetime(bezerro["Data"], dayfirst=True)
+    BASE = "https://cepea.org.br/br/consultas-ao-banco-de-dados-do-site.aspx"
+    HDRS = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer": BASE,
+    }
 
-boi     = boi.rename(columns={"Arroba BRL": "boi_brl",     "Arroba USD": "boi_usd"})
-bezerro = bezerro.rename(columns={"Arroba BRL": "bezerro_brl", "Arroba USD": "bezerro_usd"})
+    def _parse_num(val):
+        return float(str(val).replace(".", "").replace(",", "."))
 
+    def _fetch_xls(tabela_id):
+        today = pd.Timestamp.today().strftime("%d/%m/%Y")
+        start_fmt = pd.Timestamp(start).strftime("%d/%m/%Y")
+        resp = requests.get(
+            BASE,
+            params={"tabela_id": tabela_id, "data_inicial": start_fmt,
+                    "data_final": today, "periodicidade": "1"},
+            headers=HDRS, timeout=90,
+        ).json()
+        raw = requests.get(resp["arquivo"], headers=HDRS, timeout=90).content
+        wb  = xlrd.open_workbook(file_contents=raw, ignore_workbook_corruption=True)
+        sh  = wb.sheet_by_index(0)
+        # row 3 = header, data from row 4 onward
+        cols = [sh.cell_value(3, j) for j in range(sh.ncols)]
+        rows = [[sh.cell_value(i, j) for j in range(sh.ncols)]
+                for i in range(4, sh.nrows)]
+        return pd.DataFrame(rows, columns=cols)
+
+    # ── Boi Gordo (R$/arroba) ───────────────────────────────────────────────
+    raw_boi        = _fetch_xls("2")
+    boi_brl_series = raw_boi.iloc[:, 1].apply(_parse_num)
+    datas_boi      = pd.to_datetime(raw_boi.iloc[:, 0], dayfirst=True)
+
+    # ── Bezerro (R$/cabeça e US$/cabeça → ÷7 = R$/@ e US$/@) ───────────────
+    raw_bez         = _fetch_xls("3")
+    datas_bez       = pd.to_datetime(raw_bez.iloc[:, 0], dayfirst=True)
+    bez_brl_cabeca  = raw_bez.iloc[:, 1].apply(_parse_num)
+    bez_usd_cabeca  = raw_bez.iloc[:, 2].apply(_parse_num)
+
+    # Câmbio implícito da CEPEA (BRL por 1 USD), para converter boi gordo em USD
+    usdbrl_implied = (bez_brl_cabeca / bez_usd_cabeca).values
+    usdbrl_s = pd.Series(usdbrl_implied, index=datas_bez).sort_index()
+
+    # ── Montar DataFrames finais ─────────────────────────────────────────────
+    boi = pd.DataFrame({"Data": datas_boi, "boi_brl": boi_brl_series.values})
+    boi["boi_usd"] = (
+        boi.set_index("Data")["boi_brl"]
+        .div(usdbrl_s.reindex(datas_boi.values, method="nearest"))
+        .values
+    )
+
+    bezerro = pd.DataFrame({
+        "Data":        datas_bez,
+        "bezerro_brl": (bez_brl_cabeca / 7).values,
+        "bezerro_usd": (bez_usd_cabeca / 7).values,
+    })
+
+    return boi, bezerro
+
+
+_cattle_result = fetch_cattle_prices()
+if _cattle_result is None:
+    st.error("Não foi possível carregar os preços do CEPEA. Verifique a conexão.")
+    st.stop()
+
+boi, bezerro = _cattle_result
 df = pd.merge(boi, bezerro, on="Data", how="inner")
 
 # -------------------------

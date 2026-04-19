@@ -5,3 +5,5 @@ plotly
 yfinance
 python-bcb
 openpyxl
+xlrd
+requests
